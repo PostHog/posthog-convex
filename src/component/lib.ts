@@ -1,3 +1,4 @@
+import type { FeatureFlagValue, JsonType } from "@posthog/core";
 import { PostHog } from "posthog-node/edge";
 import { action } from "./_generated/server.js";
 import { v } from "convex/values";
@@ -148,7 +149,7 @@ function featureFlagOptions(args: {
 
 export const getFeatureFlag = action({
   args: featureFlagArgs,
-  handler: async (_ctx, args) => {
+  handler: async (_ctx, args): Promise<FeatureFlagValue | null> => {
     const client = createClient(args.apiKey, args.host);
     const result = await client.getFeatureFlag(
       args.key,
@@ -179,7 +180,7 @@ export const getFeatureFlagPayload = action({
     ...featureFlagArgs,
     matchValue: v.optional(v.union(v.string(), v.boolean())),
   },
-  handler: async (_ctx, args) => {
+  handler: async (_ctx, args): Promise<JsonType> => {
     const client = createClient(args.apiKey, args.host);
     const result = await client.getFeatureFlagPayload(
       args.key,
@@ -194,7 +195,15 @@ export const getFeatureFlagPayload = action({
 
 export const getFeatureFlagResult = action({
   args: featureFlagArgs,
-  handler: async (_ctx, args) => {
+  handler: async (
+    _ctx,
+    args,
+  ): Promise<{
+    key: string;
+    enabled: boolean;
+    variant: string | null;
+    payload: JsonType | null;
+  } | null> => {
     const client = createClient(args.apiKey, args.host);
     const result = await client.getFeatureFlagResult(
       args.key,
@@ -225,7 +234,10 @@ const allFlagsArgs = {
 
 export const getAllFlags = action({
   args: allFlagsArgs,
-  handler: async (_ctx, args) => {
+  handler: async (
+    _ctx,
+    args,
+  ): Promise<Record<string, FeatureFlagValue>> => {
     const client = createClient(args.apiKey, args.host);
     const result = await client.getAllFlags(args.distinctId, {
       groups: args.groups,
@@ -241,7 +253,13 @@ export const getAllFlags = action({
 
 export const getAllFlagsAndPayloads = action({
   args: allFlagsArgs,
-  handler: async (_ctx, args) => {
+  handler: async (
+    _ctx,
+    args,
+  ): Promise<{
+    featureFlags?: Record<string, FeatureFlagValue>;
+    featureFlagPayloads?: Record<string, JsonType>;
+  }> => {
     const client = createClient(args.apiKey, args.host);
     const result = await client.getAllFlagsAndPayloads(args.distinctId, {
       groups: args.groups,
