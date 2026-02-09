@@ -1,91 +1,236 @@
+import { PostHog } from "posthog-node/edge";
+import { action } from "./_generated/server.js";
 import { v } from "convex/values";
-import { httpActionGeneric } from "convex/server";
-import {
-  action,
-  internalMutation,
-  internalQuery,
-  mutation,
-  query,
-} from "./_generated/server.js";
-import { api, internal } from "./_generated/api.js";
-import schema from "./schema.js";
 
-const commentValidator = schema.tables.comments.validator.extend({
-  _id: v.id("comments"),
-  _creationTime: v.number(),
-});
+function createClient(apiKey: string, host: string) {
+  return new PostHog(apiKey, { host, flushAt: 1, flushInterval: 0 });
+}
 
-export const list = query({
+export const capture = action({
   args: {
-    targetId: v.string(),
-    limit: v.optional(v.number()),
+    apiKey: v.string(),
+    host: v.string(),
+    distinctId: v.string(),
+    event: v.string(),
+    properties: v.optional(v.any()),
+    groups: v.optional(v.any()),
+    sendFeatureFlags: v.optional(v.boolean()),
+    timestamp: v.optional(v.number()),
+    uuid: v.optional(v.string()),
+    disableGeoip: v.optional(v.boolean()),
   },
-  returns: v.array(commentValidator),
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("comments")
-      .withIndex("targetId", (q) => q.eq("targetId", args.targetId))
-      .order("desc")
-      .take(args.limit ?? 100);
-  },
-});
-
-export const getComment = internalQuery({
-  args: {
-    commentId: v.id("comments"),
-  },
-  returns: v.union(v.null(), commentValidator),
-  handler: async (ctx, args) => {
-    return await ctx.db.get("comments", args.commentId);
-  },
-});
-export const add = mutation({
-  args: {
-    text: v.string(),
-    userId: v.string(),
-    targetId: v.string(),
-  },
-  returns: v.id("comments"),
-  handler: async (ctx, args) => {
-    const commentId = await ctx.db.insert("comments", {
-      text: args.text,
-      userId: args.userId,
-      targetId: args.targetId,
+  handler: async (_ctx, args) => {
+    const client = createClient(args.apiKey, args.host);
+    client.capture({
+      distinctId: args.distinctId,
+      event: args.event,
+      properties: args.properties,
+      groups: args.groups,
+      sendFeatureFlags: args.sendFeatureFlags,
+      timestamp: args.timestamp ? new Date(args.timestamp) : undefined,
+      uuid: args.uuid,
+      disableGeoip: args.disableGeoip,
     });
-    return commentId;
-  },
-});
-export const updateComment = internalMutation({
-  args: {
-    commentId: v.id("comments"),
-    text: v.string(),
-  },
-  handler: async (ctx, args) => {
-    await ctx.db.patch("comments", args.commentId, { text: args.text });
+    await client.shutdown();
   },
 });
 
-export const translate = action({
+export const identify = action({
   args: {
-    commentId: v.id("comments"),
-    baseUrl: v.string(),
+    apiKey: v.string(),
+    host: v.string(),
+    distinctId: v.string(),
+    properties: v.optional(v.any()),
+    disableGeoip: v.optional(v.boolean()),
   },
-  returns: v.string(),
-  handler: async (ctx, args) => {
-    const comment = (await ctx.runQuery(internal.lib.getComment, {
-      commentId: args.commentId,
-    })) as { text: string; userId: string } | null;
-    if (!comment) {
-      throw new Error("Comment not found");
-    }
-    const response = await fetch(
-      `${args.baseUrl}/api/translate?english=${encodeURIComponent(comment.text)}`,
+  handler: async (_ctx, args) => {
+    const client = createClient(args.apiKey, args.host);
+    client.identify({
+      distinctId: args.distinctId,
+      properties: args.properties,
+      disableGeoip: args.disableGeoip,
+    });
+    await client.shutdown();
+  },
+});
+
+export const groupIdentify = action({
+  args: {
+    apiKey: v.string(),
+    host: v.string(),
+    groupType: v.string(),
+    groupKey: v.string(),
+    properties: v.optional(v.any()),
+    distinctId: v.optional(v.string()),
+    disableGeoip: v.optional(v.boolean()),
+  },
+  handler: async (_ctx, args) => {
+    const client = createClient(args.apiKey, args.host);
+    client.groupIdentify({
+      groupType: args.groupType,
+      groupKey: args.groupKey,
+      properties: args.properties,
+      distinctId: args.distinctId,
+      disableGeoip: args.disableGeoip,
+    });
+    await client.shutdown();
+  },
+});
+
+export const alias = action({
+  args: {
+    apiKey: v.string(),
+    host: v.string(),
+    distinctId: v.string(),
+    alias: v.string(),
+    disableGeoip: v.optional(v.boolean()),
+  },
+  handler: async (_ctx, args) => {
+    const client = createClient(args.apiKey, args.host);
+    client.alias({
+      distinctId: args.distinctId,
+      alias: args.alias,
+      disableGeoip: args.disableGeoip,
+    });
+    await client.shutdown();
+  },
+});
+
+// Feature flag actions — these return values and must be called via ctx.runAction
+
+const featureFlagArgs = {
+  apiKey: v.string(),
+  host: v.string(),
+  key: v.string(),
+  distinctId: v.string(),
+  groups: v.optional(v.any()),
+  personProperties: v.optional(v.any()),
+  groupProperties: v.optional(v.any()),
+  sendFeatureFlagEvents: v.optional(v.boolean()),
+  disableGeoip: v.optional(v.boolean()),
+};
+
+function featureFlagOptions(args: {
+  groups?: Record<string, string>;
+  personProperties?: Record<string, string>;
+  groupProperties?: Record<string, Record<string, string>>;
+  sendFeatureFlagEvents?: boolean;
+  disableGeoip?: boolean;
+}) {
+  return {
+    groups: args.groups,
+    personProperties: args.personProperties,
+    groupProperties: args.groupProperties,
+    sendFeatureFlagEvents: args.sendFeatureFlagEvents,
+    disableGeoip: args.disableGeoip,
+  };
+}
+
+export const getFeatureFlag = action({
+  args: featureFlagArgs,
+  handler: async (_ctx, args) => {
+    const client = createClient(args.apiKey, args.host);
+    const result = await client.getFeatureFlag(
+      args.key,
+      args.distinctId,
+      featureFlagOptions(args),
     );
-    const data = await response.text();
-    await ctx.runMutation(internal.lib.updateComment, {
-      commentId: args.commentId,
-      text: data,
+    await client.shutdown();
+    return result ?? null;
+  },
+});
+
+export const isFeatureEnabled = action({
+  args: featureFlagArgs,
+  handler: async (_ctx, args) => {
+    const client = createClient(args.apiKey, args.host);
+    const result = await client.isFeatureEnabled(
+      args.key,
+      args.distinctId,
+      featureFlagOptions(args),
+    );
+    await client.shutdown();
+    return result ?? null;
+  },
+});
+
+export const getFeatureFlagPayload = action({
+  args: {
+    ...featureFlagArgs,
+    matchValue: v.optional(v.union(v.string(), v.boolean())),
+  },
+  handler: async (_ctx, args) => {
+    const client = createClient(args.apiKey, args.host);
+    const result = await client.getFeatureFlagPayload(
+      args.key,
+      args.distinctId,
+      args.matchValue,
+      featureFlagOptions(args),
+    );
+    await client.shutdown();
+    return result ?? null;
+  },
+});
+
+export const getFeatureFlagResult = action({
+  args: featureFlagArgs,
+  handler: async (_ctx, args) => {
+    const client = createClient(args.apiKey, args.host);
+    const result = await client.getFeatureFlagResult(
+      args.key,
+      args.distinctId,
+      featureFlagOptions(args),
+    );
+    await client.shutdown();
+    if (!result) return null;
+    return {
+      key: result.key,
+      enabled: result.enabled,
+      variant: result.variant ?? null,
+      payload: result.payload ?? null,
+    };
+  },
+});
+
+const allFlagsArgs = {
+  apiKey: v.string(),
+  host: v.string(),
+  distinctId: v.string(),
+  groups: v.optional(v.any()),
+  personProperties: v.optional(v.any()),
+  groupProperties: v.optional(v.any()),
+  disableGeoip: v.optional(v.boolean()),
+  flagKeys: v.optional(v.array(v.string())),
+};
+
+export const getAllFlags = action({
+  args: allFlagsArgs,
+  handler: async (_ctx, args) => {
+    const client = createClient(args.apiKey, args.host);
+    const result = await client.getAllFlags(args.distinctId, {
+      groups: args.groups,
+      personProperties: args.personProperties,
+      groupProperties: args.groupProperties,
+      disableGeoip: args.disableGeoip,
+      flagKeys: args.flagKeys,
     });
-    return data;
+    await client.shutdown();
+    return result;
+  },
+});
+
+export const getAllFlagsAndPayloads = action({
+  args: allFlagsArgs,
+  handler: async (_ctx, args) => {
+    const client = createClient(args.apiKey, args.host);
+    const result = await client.getAllFlagsAndPayloads(args.distinctId, {
+      groups: args.groups,
+      personProperties: args.personProperties,
+      groupProperties: args.groupProperties,
+      disableGeoip: args.disableGeoip,
+      flagKeys: args.flagKeys,
+    });
+    await client.shutdown();
+    return result;
   },
 });

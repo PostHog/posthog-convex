@@ -24,31 +24,164 @@ import type { FunctionReference } from "convex/server";
 export type ComponentApi<Name extends string | undefined = string | undefined> =
   {
     lib: {
-      add: FunctionReference<
-        "mutation",
-        "internal",
-        { targetId: string; text: string; userId: string },
-        string,
-        Name
-      >;
-      list: FunctionReference<
-        "query",
-        "internal",
-        { limit?: number; targetId: string },
-        Array<{
-          _creationTime: number;
-          _id: string;
-          targetId: string;
-          text: string;
-          userId: string;
-        }>,
-        Name
-      >;
-      translate: FunctionReference<
+      alias: FunctionReference<
         "action",
         "internal",
-        { baseUrl: string; commentId: string },
-        string,
+        {
+          alias: string;
+          apiKey: string;
+          disableGeoip?: boolean;
+          distinctId: string;
+          host: string;
+        },
+        any,
+        Name
+      >;
+      capture: FunctionReference<
+        "action",
+        "internal",
+        {
+          apiKey: string;
+          disableGeoip?: boolean;
+          distinctId: string;
+          event: string;
+          groups?: any;
+          host: string;
+          properties?: any;
+          sendFeatureFlags?: boolean;
+          timestamp?: number;
+          uuid?: string;
+        },
+        any,
+        Name
+      >;
+      getAllFlags: FunctionReference<
+        "action",
+        "internal",
+        {
+          apiKey: string;
+          disableGeoip?: boolean;
+          distinctId: string;
+          flagKeys?: Array<string>;
+          groupProperties?: any;
+          groups?: any;
+          host: string;
+          personProperties?: any;
+        },
+        any,
+        Name
+      >;
+      getAllFlagsAndPayloads: FunctionReference<
+        "action",
+        "internal",
+        {
+          apiKey: string;
+          disableGeoip?: boolean;
+          distinctId: string;
+          flagKeys?: Array<string>;
+          groupProperties?: any;
+          groups?: any;
+          host: string;
+          personProperties?: any;
+        },
+        any,
+        Name
+      >;
+      getFeatureFlag: FunctionReference<
+        "action",
+        "internal",
+        {
+          apiKey: string;
+          disableGeoip?: boolean;
+          distinctId: string;
+          groupProperties?: any;
+          groups?: any;
+          host: string;
+          key: string;
+          personProperties?: any;
+          sendFeatureFlagEvents?: boolean;
+        },
+        any,
+        Name
+      >;
+      getFeatureFlagPayload: FunctionReference<
+        "action",
+        "internal",
+        {
+          apiKey: string;
+          disableGeoip?: boolean;
+          distinctId: string;
+          groupProperties?: any;
+          groups?: any;
+          host: string;
+          key: string;
+          matchValue?: string | boolean;
+          personProperties?: any;
+          sendFeatureFlagEvents?: boolean;
+        },
+        any,
+        Name
+      >;
+      getFeatureFlagResult: FunctionReference<
+        "action",
+        "internal",
+        {
+          apiKey: string;
+          disableGeoip?: boolean;
+          distinctId: string;
+          groupProperties?: any;
+          groups?: any;
+          host: string;
+          key: string;
+          personProperties?: any;
+          sendFeatureFlagEvents?: boolean;
+        },
+        any,
+        Name
+      >;
+      groupIdentify: FunctionReference<
+        "action",
+        "internal",
+        {
+          apiKey: string;
+          disableGeoip?: boolean;
+          distinctId?: string;
+          groupKey: string;
+          groupType: string;
+          host: string;
+          properties?: any;
+        },
+        any,
+        Name
+      >;
+      identify: FunctionReference<
+        "action",
+        "internal",
+        {
+          apiKey: string;
+          disableGeoip?: boolean;
+          distinctId: string;
+          host: string;
+          properties?: any;
+        },
+        any,
+        Name
+      >;
+      isFeatureEnabled: FunctionReference<
+        "action",
+        "internal",
+        {
+          apiKey: string;
+          disableGeoip?: boolean;
+          distinctId: string;
+          groupProperties?: any;
+          groups?: any;
+          host: string;
+          key: string;
+          personProperties?: any;
+          sendFeatureFlagEvents?: boolean;
+        },
+        any,
         Name
       >;
     };

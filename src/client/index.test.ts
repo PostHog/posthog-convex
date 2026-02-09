@@ -1,36 +1,43 @@
 import { describe, expect, test } from "vitest";
-import { exposeApi } from "./index.js";
-import { anyApi, type ApiFromModules } from "convex/server";
-import { components, initConvexTest } from "./setup.test.js";
+import { PostHog } from "./index.js";
 
-export const { add, list } = exposeApi(components.posthog, {
-  auth: async (ctx, _operation) => {
-    return (await ctx.auth.getUserIdentity())?.subject ?? "anonymous";
-  },
-  baseUrl: "https://pirate.monkeyness.com",
-});
+describe("PostHog client", () => {
+  test("constructor uses defaults from env", () => {
+    process.env.POSTHOG_API_KEY = "test-key";
+    process.env.POSTHOG_HOST = "https://test.posthog.com";
 
-const testApi = (
-  anyApi as unknown as ApiFromModules<{
-    "index.test": {
-      add: typeof add;
-      list: typeof list;
-    };
-  }>
-)["index.test"];
+    const posthog = new PostHog({} as never);
+    expect(posthog).toBeInstanceOf(PostHog);
 
-describe("client tests", () => {
-  test("should be able to use client", async () => {
-    const t = initConvexTest().withIdentity({
-      subject: "user1",
+    delete process.env.POSTHOG_API_KEY;
+    delete process.env.POSTHOG_HOST;
+  });
+
+  test("constructor accepts explicit options", () => {
+    const posthog = new PostHog({} as never, {
+      apiKey: "explicit-key",
+      host: "https://custom.posthog.com",
     });
-    const targetId = "test-subject-1";
-    await t.mutation(testApi.add, {
-      text: "My first comment",
-      targetId: targetId,
-    });
-    const comments = await t.query(testApi.list, { targetId });
-    expect(comments).toHaveLength(1);
-    expect(comments[0].text).toBe("My first comment");
+    expect(posthog).toBeInstanceOf(PostHog);
+  });
+
+  test("exposes capture, identify, groupIdentify, alias methods", () => {
+    const posthog = new PostHog({} as never, { apiKey: "test" });
+
+    expect(typeof posthog.capture).toBe("function");
+    expect(typeof posthog.identify).toBe("function");
+    expect(typeof posthog.groupIdentify).toBe("function");
+    expect(typeof posthog.alias).toBe("function");
+  });
+
+  test("exposes feature flag methods", () => {
+    const posthog = new PostHog({} as never, { apiKey: "test" });
+
+    expect(typeof posthog.getFeatureFlag).toBe("function");
+    expect(typeof posthog.isFeatureEnabled).toBe("function");
+    expect(typeof posthog.getFeatureFlagPayload).toBe("function");
+    expect(typeof posthog.getFeatureFlagResult).toBe("function");
+    expect(typeof posthog.getAllFlags).toBe("function");
+    expect(typeof posthog.getAllFlagsAndPayloads).toBe("function");
   });
 });
