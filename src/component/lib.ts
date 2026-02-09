@@ -96,6 +96,26 @@ export const alias = action({
   },
 });
 
+export const captureException = action({
+  args: {
+    apiKey: v.string(),
+    host: v.string(),
+    distinctId: v.optional(v.string()),
+    errorMessage: v.string(),
+    errorStack: v.optional(v.string()),
+    errorName: v.optional(v.string()),
+    additionalProperties: v.optional(v.any()),
+  },
+  handler: async (_ctx, args) => {
+    const client = createClient(args.apiKey, args.host);
+    const error = new Error(args.errorMessage);
+    if (args.errorName) error.name = args.errorName;
+    if (args.errorStack) error.stack = args.errorStack;
+    client.captureException(error, args.distinctId, args.additionalProperties);
+    await client.shutdown();
+  },
+});
+
 // Feature flag actions — these return values and must be called via ctx.runAction
 
 const featureFlagArgs = {

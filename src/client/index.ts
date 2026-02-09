@@ -22,17 +22,75 @@ export type FeatureFlagResult = {
   payload: unknown;
 };
 
+export type PostHogEvent = {
+  event: string;
+  distinctId: string;
+  properties?: Record<string, unknown>;
+};
+
+export type BeforeSendFn = (event: PostHogEvent) => PostHogEvent | null;
+
+export function normalizeError(error: unknown): {
+  message: string;
+  stack?: string;
+  name?: string;
+} {
+  if (error instanceof Error) {
+    return { message: error.message, stack: error.stack, name: error.name };
+  }
+  if (typeof error === "string") {
+    return { message: error };
+  }
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof (error as { message: unknown }).message === "string"
+  ) {
+    const obj = error as {
+      message: string;
+      stack?: unknown;
+      name?: unknown;
+    };
+    return {
+      message: obj.message,
+      stack: typeof obj.stack === "string" ? obj.stack : undefined,
+      name: typeof obj.name === "string" ? obj.name : undefined,
+    };
+  }
+  return { message: String(error) };
+}
+
 export class PostHog {
   private apiKey: string;
   private host: string;
+  private beforeSend?: BeforeSendFn | BeforeSendFn[];
 
   constructor(
     public component: ComponentApi,
-    options?: { apiKey?: string; host?: string },
+    options?: {
+      apiKey?: string;
+      host?: string;
+      beforeSend?: BeforeSendFn | BeforeSendFn[];
+    },
   ) {
     this.apiKey = options?.apiKey ?? process.env.POSTHOG_API_KEY ?? "";
     this.host =
       options?.host ?? process.env.POSTHOG_HOST ?? "https://us.i.posthog.com";
+    this.beforeSend = options?.beforeSend;
+  }
+
+  private runBeforeSend(event: PostHogEvent): PostHogEvent | null {
+    if (!this.beforeSend) return event;
+    const fns = Array.isArray(this.beforeSend)
+      ? this.beforeSend
+      : [this.beforeSend];
+    let result: PostHogEvent | null = event;
+    for (const fn of fns) {
+      result = fn(result);
+      if (!result) return null;
+    }
+    return result;
   }
 
   // --- Fire-and-forget methods (work in mutations and actions) ---
@@ -50,12 +108,19 @@ export class PostHog {
       disableGeoip?: boolean;
     },
   ) {
+    const result = this.runBeforeSend({
+      event: args.event,
+      distinctId: args.distinctId,
+      properties: args.properties,
+    });
+    if (!result) return;
+
     await ctx.scheduler.runAfter(0, this.component.lib.capture, {
       apiKey: this.apiKey,
       host: this.host,
-      distinctId: args.distinctId,
-      event: args.event,
-      properties: args.properties,
+      distinctId: result.distinctId,
+      event: result.event,
+      properties: result.properties,
       groups: args.groups,
       sendFeatureFlags: args.sendFeatureFlags,
       timestamp: args.timestamp?.getTime(),
@@ -68,14 +133,27 @@ export class PostHog {
     ctx: SchedulerCtx,
     args: {
       distinctId: string;
-      properties?: Record<string, unknown>;
+      properties?: Record<string, unknown> & {
+        $set?: Record<string, unknown>;
+        $set_once?: Record<string, unknown>;
+        $anon_distinct_id?: string;
+      };
       disableGeoip?: boolean;
     },
   ) {
+    const result = this.runBeforeSend({
+      event: "$identify",
+      distinctId: args.distinctId,
+      properties: args.properties,
+    });
+    if (!result) return;
+
     await ctx.scheduler.runAfter(0, this.component.lib.identify, {
       apiKey: this.apiKey,
       host: this.host,
-      ...args,
+      distinctId: result.distinctId,
+      properties: result.properties,
+      disableGeoip: args.disableGeoip,
     });
   }
 
@@ -89,10 +167,21 @@ export class PostHog {
       disableGeoip?: boolean;
     },
   ) {
+    const result = this.runBeforeSend({
+      event: "$groupidentify",
+      distinctId: args.distinctId ?? "",
+      properties: args.properties,
+    });
+    if (!result) return;
+
     await ctx.scheduler.runAfter(0, this.component.lib.groupIdentify, {
       apiKey: this.apiKey,
       host: this.host,
-      ...args,
+      groupType: args.groupType,
+      groupKey: args.groupKey,
+      properties: result.properties,
+      distinctId: args.distinctId,
+      disableGeoip: args.disableGeoip,
     });
   }
 
@@ -104,10 +193,46 @@ export class PostHog {
       disableGeoip?: boolean;
     },
   ) {
+    const result = this.runBeforeSend({
+      event: "$create_alias",
+      distinctId: args.distinctId,
+    });
+    if (!result) return;
+
     await ctx.scheduler.runAfter(0, this.component.lib.alias, {
       apiKey: this.apiKey,
       host: this.host,
-      ...args,
+      distinctId: result.distinctId,
+      alias: args.alias,
+      disableGeoip: args.disableGeoip,
+    });
+  }
+
+  async captureException(
+    ctx: SchedulerCtx,
+    args: {
+      error: unknown;
+      distinctId?: string;
+      additionalProperties?: Record<string, unknown>;
+    },
+  ) {
+    const { message, stack, name } = normalizeError(args.error);
+
+    const result = this.runBeforeSend({
+      event: "$exception",
+      distinctId: args.distinctId ?? "",
+      properties: args.additionalProperties,
+    });
+    if (!result) return;
+
+    await ctx.scheduler.runAfter(0, this.component.lib.captureException, {
+      apiKey: this.apiKey,
+      host: this.host,
+      distinctId: result.distinctId || undefined,
+      errorMessage: message,
+      errorStack: stack,
+      errorName: name,
+      additionalProperties: result.properties,
     });
   }
 

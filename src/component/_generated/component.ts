@@ -55,6 +55,21 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         any,
         Name
       >;
+      captureException: FunctionReference<
+        "action",
+        "internal",
+        {
+          additionalProperties?: any;
+          apiKey: string;
+          distinctId?: string;
+          errorMessage: string;
+          errorName?: string;
+          errorStack?: string;
+          host: string;
+        },
+        any,
+        Name
+      >;
       getAllFlags: FunctionReference<
         "action",
         "internal",
