@@ -1,6 +1,6 @@
 {
   "name": "@posthog/convex",
-  "description": "A posthog convex component for Convex.",
+  "description": "Send analytics events to PostHog from your Convex backend.",
   "repository": {
     "type": "git",
     "url": "https://github.com/PostHog/posthog-convex.git"
@@ -14,7 +14,9 @@
   "license": "MIT",
   "keywords": [
     "convex",
-    "component"
+    "component",
+    "posthog",
+    "analytics"
   ],
   "type": "module",
   "scripts": {
@@ -49,10 +51,6 @@
       "types": "./dist/client/index.d.ts",
       "default": "./dist/client/index.js"
     },
-    "./react": {
-      "types": "./dist/react/index.d.ts",
-      "default": "./dist/react/index.js"
-    },
     "./test": "./src/test.ts",
     "./_generated/component.js": {
       "types": "./dist/component/_generated/component.d.ts"
@@ -70,8 +68,10 @@
     }
   },
   "peerDependencies": {
-    "convex": "^1.31.7",
-    "react": "^18.3.1 || ^19.0.0"
+    "convex": "^1.31.7"
+  },
+  "dependencies": {
+    "posthog-node": "^5.24.11"
   },
   "devDependencies": {
     "@convex-dev/eslint-plugin": "^1.1.1",

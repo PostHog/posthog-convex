@@ -1,0 +1,2 @@
+overrides:
+  posthog-node: link:../posthog-js/packages/node

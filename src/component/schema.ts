@@ -1,10 +1,3 @@
-import { defineSchema, defineTable } from "convex/server";
-import { v } from "convex/values";
+import { defineSchema } from "convex/server";
 
-export default defineSchema({
-  comments: defineTable({
-    text: v.string(),
-    userId: v.string(), // Note: you can't use v.id referring to external tables
-    targetId: v.string(),
-  }).index("targetId", ["targetId"]),
-});
+export default defineSchema({});

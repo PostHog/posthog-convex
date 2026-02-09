@@ -4,9 +4,16 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  posthog-node: link:../posthog-js/packages/node
+
 importers:
 
   .:
+    dependencies:
+      posthog-node:
+        specifier: link:../posthog-js/packages/node
+        version: link:../posthog-js/packages/node
     devDependencies:
       '@convex-dev/eslint-plugin':
         specifier: ^1.1.1
