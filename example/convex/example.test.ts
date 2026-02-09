@@ -1,26 +1,20 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { initConvexTest } from "./setup.test";
+import { describe, expect, test } from "vitest";
 import { api } from "./_generated/api";
 
 describe("example", () => {
-  beforeEach(async () => {
-    vi.useFakeTimers();
+  test("mutation functions exist", () => {
+    expect(api.example.testCapture).toBeDefined();
+    expect(api.example.testIdentify).toBeDefined();
+    expect(api.example.testGroupIdentify).toBeDefined();
+    expect(api.example.testAlias).toBeDefined();
   });
 
-  afterEach(async () => {
-    vi.useRealTimers();
-  });
-
-  test("addComment and listComments", async () => {
-    const t = initConvexTest();
-    const targetId = "test-subject-1";
-    const commentId = await t.mutation(api.example.addComment, {
-      text: "My comment",
-      targetId,
-    });
-    expect(commentId).toBeDefined();
-    const comments = await t.query(api.example.listComments, { targetId });
-    expect(comments).toHaveLength(1);
-    expect(comments[0].text).toBe("My comment");
+  test("feature flag action functions exist", () => {
+    expect(api.example.testGetFeatureFlag).toBeDefined();
+    expect(api.example.testIsFeatureEnabled).toBeDefined();
+    expect(api.example.testGetFeatureFlagPayload).toBeDefined();
+    expect(api.example.testGetFeatureFlagResult).toBeDefined();
+    expect(api.example.testGetAllFlags).toBeDefined();
+    expect(api.example.testGetAllFlagsAndPayloads).toBeDefined();
   });
 });

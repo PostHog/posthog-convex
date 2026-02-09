@@ -1,88 +1,21 @@
-# Convex Component Template
-
-This is a Convex component, ready to be published on npm.
-
-To create your own component:
-
-1. Write code in src/component for your component. Component-specific tables,
-   queries, mutations, and actions go here.
-1. Write code in src/client for the Class that interfaces with the component.
-   This is the bridge your users will access to get information into and out of
-   your component
-1. Write example usage in example/convex/example.ts.
-1. Delete the text in this readme until `---` and flesh out the README.
-1. Publish to npm with `pnpm alpha` or `pnpm release`.
-
-To develop your component run a dev process in the example project:
-
-```sh
-pnpm i
-pnpm dev
-```
-
-`pnpm i` will do the install and an initial build. `pnpm dev` will start a
-file watcher to re-build the component, as well as the example project frontend
-and backend, which does codegen and installs the component.
-
-Modify the schema and index files in src/component/ to define your component.
-
-Write a client for using this component in src/client/index.ts.
-
-If you won't be adding frontend code (e.g. React components) to this component
-you can delete "./react" references in package.json and "src/react/" directory.
-If you will be adding frontend code, add a peer dependency on React in
-package.json.
-
-### Component Directory structure
-
-```
-.
-├── README.md           documentation of your component
-├── package.json        component name, version number, other metadata
-├── package-lock.json   Components are like libraries, package-lock.json
-│                       is .gitignored and ignored by consumers.
-├── src
-│   ├── component/
-│   │   ├── _generated/ Files here are generated for the component.
-│   │   ├── convex.config.ts  Name your component here and use other components
-│   │   ├── lib.ts    Define functions here and in new files in this directory
-│   │   └── schema.ts   schema specific to this component
-│   ├── client/
-│   │   └── index.ts    Code that needs to run in the app that uses the
-│   │                   component. Generally the app interacts directly with
-│   │                   the component's exposed API (src/component/*).
-│   └── react/          Code intended to be used on the frontend goes here.
-│       │               Your are free to delete this if this component
-│       │               does not provide code.
-│       └── index.ts
-├── example/            example Convex app that uses this component
-│   └── convex/
-│       ├── _generated/       Files here are generated for the example app.
-│       ├── convex.config.ts  Imports and uses this component
-│       ├── myFunctions.ts    Functions that use the component
-│       └── schema.ts         Example app schema
-└── dist/               Publishing artifacts will be created here.
-```
-
----
-
-# Convex Posthog Convex
+# @posthog/convex
 
 [![npm version](https://badge.fury.io/js/@posthog%2Fconvex.svg)](https://badge.fury.io/js/@posthog%2Fconvex)
 
-<!-- START: Include on https://convex.dev/components -->
-
-- [ ] What is some compelling syntax as a hook?
-- [ ] Why should you use this component?
-- [ ] Links to docs / other resources?
+Send analytics events to [PostHog](https://posthog.com) from your
+[Convex](https://convex.dev) backend. Capture events, identify users, manage
+groups, and evaluate feature flags directly from your mutations and actions.
 
 Found a bug? Feature request?
 [File it here](https://github.com/PostHog/posthog-convex/issues).
 
 ## Installation
 
-Create a `convex.config.ts` file in your app's `convex/` folder and install the
-component by calling `use`:
+```sh
+npm install @posthog/convex
+```
+
+Register the component in your `convex/convex.config.ts`:
 
 ```ts
 // convex/convex.config.ts
@@ -95,50 +28,203 @@ app.use(posthog);
 export default app;
 ```
 
-## Usage
+Set your PostHog API key and host on your Convex deployment:
+
+```sh
+npx convex env set POSTHOG_API_KEY phc_your_project_api_key
+npx convex env set POSTHOG_HOST https://us.i.posthog.com
+```
+
+## Setup
+
+Create a `convex/posthog.ts` file to initialize the client:
 
 ```ts
+// convex/posthog.ts
+import { PostHog } from "@posthog/convex";
 import { components } from "./_generated/api";
 
-export const addComment = mutation({
-  args: { text: v.string(), targetId: v.string() },
+export const posthog = new PostHog(components.posthog);
+```
+
+You can also pass the API key and host explicitly:
+
+```ts
+export const posthog = new PostHog(components.posthog, {
+  apiKey: "phc_...",
+  host: "https://eu.i.posthog.com",
+});
+```
+
+## Usage
+
+Import `posthog` from your setup file and call methods directly:
+
+```ts
+// convex/myFunctions.ts
+import { posthog } from "./posthog";
+import { mutation } from "./_generated/server";
+import { v } from "convex/values";
+
+export const createUser = mutation({
+  args: { email: v.string() },
   handler: async (ctx, args) => {
-    return await ctx.runMutation(components.posthog.lib.add, {
-      text: args.text,
-      targetId: args.targetId,
-      userId: await getAuthUserId(ctx),
+    const userId = await ctx.db.insert("users", { email: args.email });
+
+    await posthog.capture(ctx, {
+      distinctId: userId,
+      event: "user_created",
+      properties: { email: args.email },
     });
+
+    return userId;
   },
 });
 ```
 
-See more example usage in [example.ts](./example/convex/example.ts).
+### Capture events
 
-### HTTP Routes
-
-You can register HTTP routes for the component to expose HTTP endpoints:
+**`posthog.capture(ctx, args)`** — Capture an event. Works in mutations and
+actions.
 
 ```ts
-import { httpRouter } from "convex/server";
-import { registerRoutes } from "@posthog/convex";
-import { components } from "./_generated/api";
-
-const http = httpRouter();
-
-registerRoutes(http, components.posthog, {
-  pathPrefix: "/comments",
+await posthog.capture(ctx, {
+  distinctId: "user_123",
+  event: "purchase_completed",
+  properties: { amount: 99.99, currency: "USD" },
+  groups: { company: "acme-corp" },
 });
-
-export default http;
 ```
 
-This will expose a GET endpoint that returns the most recent comment as JSON.
-The endpoint requires a `targetId` query parameter. See
-[http.ts](./example/convex/http.ts) for a complete example.
+Supported options: `distinctId`, `event`, `properties`, `groups`,
+`sendFeatureFlags`, `timestamp`, `uuid`, `disableGeoip`.
 
-<!-- END: Include on https://convex.dev/components -->
+### Identify users
 
-Run the example:
+**`posthog.identify(ctx, args)`** — Set user properties.
+
+```ts
+await posthog.identify(ctx, {
+  distinctId: "user_123",
+  properties: { name: "Jane Doe", plan: "pro" },
+});
+```
+
+### Identify groups
+
+**`posthog.groupIdentify(ctx, args)`** — Set group properties.
+
+```ts
+await posthog.groupIdentify(ctx, {
+  groupType: "company",
+  groupKey: "acme-corp",
+  properties: { industry: "Technology", employees: 500 },
+});
+```
+
+### Alias
+
+**`posthog.alias(ctx, args)`** — Link two distinct IDs.
+
+```ts
+await posthog.alias(ctx, {
+  distinctId: "user_123",
+  alias: "anonymous_456",
+});
+```
+
+All of the above methods schedule the PostHog API call asynchronously via
+`ctx.scheduler.runAfter`, so they return immediately without blocking your
+mutation or action.
+
+## Feature flags
+
+Feature flag methods evaluate flags by calling the PostHog API and returning
+the result. They require an **action** context (they use `ctx.runAction`
+internally).
+
+**`posthog.getFeatureFlag(ctx, args)`** — Get a flag's value.
+
+```ts
+import { posthog } from "./posthog";
+import { action } from "./_generated/server";
+import { v } from "convex/values";
+
+export const getDiscount = action({
+  args: { userId: v.string() },
+  handler: async (ctx, args) => {
+    const flag = await posthog.getFeatureFlag(ctx, {
+      key: "discount-campaign",
+      distinctId: args.userId,
+    });
+
+    if (flag === "variant-a") {
+      return { discount: 20 };
+    }
+    return { discount: 0 };
+  },
+});
+```
+
+**`posthog.isFeatureEnabled(ctx, args)`** — Check if a flag is enabled.
+
+```ts
+const enabled = await posthog.isFeatureEnabled(ctx, {
+  key: "new-onboarding",
+  distinctId: "user_123",
+});
+```
+
+**`posthog.getFeatureFlagPayload(ctx, args)`** — Get a flag's JSON payload.
+
+```ts
+const payload = await posthog.getFeatureFlagPayload(ctx, {
+  key: "pricing-config",
+  distinctId: "user_123",
+});
+```
+
+**`posthog.getFeatureFlagResult(ctx, args)`** — Get a flag's value and payload
+in one call.
+
+```ts
+const result = await posthog.getFeatureFlagResult(ctx, {
+  key: "experiment-flag",
+  distinctId: "user_123",
+});
+if (result) {
+  console.log(result.enabled, result.variant, result.payload);
+}
+```
+
+**`posthog.getAllFlags(ctx, args)`** — Get all flag values for a user.
+
+```ts
+const flags = await posthog.getAllFlags(ctx, {
+  distinctId: "user_123",
+});
+```
+
+**`posthog.getAllFlagsAndPayloads(ctx, args)`** — Get all flags and their
+payloads.
+
+```ts
+const { featureFlags, featureFlagPayloads } =
+  await posthog.getAllFlagsAndPayloads(ctx, {
+    distinctId: "user_123",
+  });
+```
+
+All feature flag methods accept optional `groups`, `personProperties`,
+`groupProperties`, `sendFeatureFlagEvents`, and `disableGeoip` options.
+`getAllFlags` and `getAllFlagsAndPayloads` also accept `flagKeys` to filter
+which flags to evaluate.
+
+## Example
+
+See the [example app](./example) for a working demo.
+
+## Development
 
 ```sh
 pnpm i
