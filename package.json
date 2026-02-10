@@ -10,7 +10,7 @@
     "url": "https://github.com/PostHog/posthog-convex/issues"
   },
   "author": "PostHog Inc.",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "license": "MIT",
   "keywords": [
     "convex",
@@ -35,11 +35,9 @@
     "test:watch": "vitest --typecheck --clearScreen false",
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
     "test:coverage": "vitest run --coverage --coverage.reporter=text",
-    "preversion": "pnpm i && pnpm build:clean && run-p test lint typecheck",
-    "prepublishOnly": "pnpm whoami || pnpm login",
-    "alpha": "pnpm version prerelease --preid alpha && pnpm publish --tag alpha && git push --follow-tags",
-    "release": "pnpm version patch && pnpm publish && git push --follow-tags",
-    "version": "vim -c 'normal o' -c 'normal o## '$npm_package_version CHANGELOG.md && prettier -w CHANGELOG.md && git add CHANGELOG.md"
+    "changeset": "changeset",
+    "bump": "changeset version",
+    "prepublishOnly": "pnpm build"
   },
   "files": [
     "dist",
@@ -74,6 +72,8 @@
     "posthog-node": "^5.24.13"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^0.5.2",
+    "@changesets/cli": "^2.29.8",
     "@convex-dev/eslint-plugin": "^1.1.1",
     "@edge-runtime/vm": "^5.0.0",
     "@eslint/eslintrc": "^3.3.3",
