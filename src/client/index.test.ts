@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { PostHog, normalizeError } from "./index.js";
-import type { BeforeSendFn } from "./index.js";
+import type { BeforeSendFn, IdentifyFn } from "./index.js";
 
 function mockSchedulerCtx() {
   return {
@@ -322,5 +322,191 @@ describe("beforeSend", () => {
     });
 
     expect(ctx.scheduler.runAfter).toHaveBeenCalledOnce();
+  });
+});
+
+describe("identify callback", () => {
+  const identifyReturning: (distinctId: string) => IdentifyFn =
+    (distinctId) => async () => ({ distinctId });
+
+  const identifyReturningNull: IdentifyFn = async () => null;
+
+  test("uses identify callback result for capture", async () => {
+    const component = { lib: { capture: "capture_ref" } };
+    const posthog = new PostHog(component as never, {
+      apiKey: "key",
+      identify: identifyReturning("auth-user-1"),
+    });
+    const ctx = mockSchedulerCtx();
+
+    await posthog.capture(ctx as never, { event: "test_event" });
+
+    const [, , args] = ctx.scheduler.runAfter.mock.calls[0];
+    expect(args.distinctId).toBe("auth-user-1");
+  });
+
+  test("falls back to explicit distinctId when identify returns null", async () => {
+    const component = { lib: { capture: "capture_ref" } };
+    const posthog = new PostHog(component as never, {
+      apiKey: "key",
+      identify: identifyReturningNull,
+    });
+    const ctx = mockSchedulerCtx();
+
+    await posthog.capture(ctx as never, {
+      distinctId: "explicit-user",
+      event: "test_event",
+    });
+
+    const [, , args] = ctx.scheduler.runAfter.mock.calls[0];
+    expect(args.distinctId).toBe("explicit-user");
+  });
+
+  test("throws when neither identify nor explicit distinctId resolves", async () => {
+    const component = { lib: { capture: "capture_ref" } };
+    const posthog = new PostHog(component as never, {
+      apiKey: "key",
+      identify: identifyReturningNull,
+    });
+    const ctx = mockSchedulerCtx();
+
+    await expect(
+      posthog.capture(ctx as never, { event: "test_event" }),
+    ).rejects.toThrow("Could not resolve distinctId");
+  });
+
+  test("throws when no identify configured and no explicit distinctId", async () => {
+    const component = { lib: { capture: "capture_ref" } };
+    const posthog = new PostHog(component as never, { apiKey: "key" });
+    const ctx = mockSchedulerCtx();
+
+    await expect(
+      posthog.capture(ctx as never, { event: "test_event" }),
+    ).rejects.toThrow("Could not resolve distinctId");
+  });
+
+  test("identify callback takes precedence over explicit distinctId", async () => {
+    const component = { lib: { capture: "capture_ref" } };
+    const posthog = new PostHog(component as never, {
+      apiKey: "key",
+      identify: identifyReturning("auth-user"),
+    });
+    const ctx = mockSchedulerCtx();
+
+    await posthog.capture(ctx as never, {
+      distinctId: "explicit-user",
+      event: "test_event",
+    });
+
+    const [, , args] = ctx.scheduler.runAfter.mock.calls[0];
+    expect(args.distinctId).toBe("auth-user");
+  });
+
+  test("passes ctx to identify callback", async () => {
+    const component = { lib: { capture: "capture_ref" } };
+    const identify = vi.fn(async () => ({ distinctId: "resolved" }));
+    const posthog = new PostHog(component as never, {
+      apiKey: "key",
+      identify,
+    });
+    const ctx = mockSchedulerCtx();
+
+    await posthog.capture(ctx as never, { event: "test_event" });
+
+    expect(identify).toHaveBeenCalledWith(ctx);
+  });
+
+  test("works with identify method", async () => {
+    const component = { lib: { identify: "identify_ref" } };
+    const posthog = new PostHog(component as never, {
+      apiKey: "key",
+      identify: identifyReturning("auth-user"),
+    });
+    const ctx = mockSchedulerCtx();
+
+    await posthog.identify(ctx as never, {});
+
+    const [, , args] = ctx.scheduler.runAfter.mock.calls[0];
+    expect(args.distinctId).toBe("auth-user");
+  });
+
+  test("works with alias method", async () => {
+    const component = { lib: { alias: "alias_ref" } };
+    const posthog = new PostHog(component as never, {
+      apiKey: "key",
+      identify: identifyReturning("auth-user"),
+    });
+    const ctx = mockSchedulerCtx();
+
+    await posthog.alias(ctx as never, { alias: "new-alias" });
+
+    const [, , args] = ctx.scheduler.runAfter.mock.calls[0];
+    expect(args.distinctId).toBe("auth-user");
+  });
+
+  test("captureException works without distinctId when identify is not configured", async () => {
+    const component = {
+      lib: { captureException: "captureException_ref" },
+    };
+    const posthog = new PostHog(component as never, { apiKey: "key" });
+    const ctx = mockSchedulerCtx();
+
+    await posthog.captureException(ctx as never, {
+      error: new Error("test"),
+    });
+
+    expect(ctx.scheduler.runAfter).toHaveBeenCalledOnce();
+    const [, , args] = ctx.scheduler.runAfter.mock.calls[0];
+    expect(args.distinctId).toBeUndefined();
+  });
+
+  test("captureException uses identify callback when available", async () => {
+    const component = {
+      lib: { captureException: "captureException_ref" },
+    };
+    const posthog = new PostHog(component as never, {
+      apiKey: "key",
+      identify: identifyReturning("auth-user"),
+    });
+    const ctx = mockSchedulerCtx();
+
+    await posthog.captureException(ctx as never, {
+      error: new Error("test"),
+    });
+
+    const [, , args] = ctx.scheduler.runAfter.mock.calls[0];
+    expect(args.distinctId).toBe("auth-user");
+  });
+
+  test("works with feature flag methods", async () => {
+    const component = { lib: { getFeatureFlag: "getFeatureFlag_ref" } };
+    const posthog = new PostHog(component as never, {
+      apiKey: "key",
+      identify: identifyReturning("auth-user"),
+    });
+    const ctx = {
+      runAction: vi.fn(
+        async (_ref: unknown, _args: Record<string, unknown>) => true,
+      ),
+    };
+
+    await posthog.getFeatureFlag(ctx as never, { key: "my-flag" });
+
+    const [, args] = ctx.runAction.mock.calls[0];
+    expect(args.distinctId).toBe("auth-user");
+  });
+
+  test("explicit distinctId still works without identify callback", async () => {
+    const component = { lib: { capture: "capture_ref" } };
+    const posthog = new PostHog(component as never, { apiKey: "key" });
+    const ctx = mockSchedulerCtx();
+
+    await posthog.capture(ctx as never, {
+      distinctId: "explicit-user",
+      event: "test_event",
+    });
+
+    const [, , args] = ctx.scheduler.runAfter.mock.calls[0];
+    expect(args.distinctId).toBe("explicit-user");
   });
 });

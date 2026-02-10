@@ -3,10 +3,13 @@ import { action, mutation } from "./_generated/server.js";
 import { v } from "convex/values";
 
 // --- Fire-and-forget methods (mutations) ---
+// When the identify callback is configured, distinctId is resolved automatically
+// from the signed-in user. Pass distinctId explicitly to override or when the
+// user is not signed in.
 
 export const testCapture = mutation({
   args: {
-    distinctId: v.string(),
+    distinctId: v.optional(v.string()),
     event: v.string(),
     properties: v.optional(v.any()),
     groups: v.optional(v.any()),
@@ -32,7 +35,7 @@ export const testCapture = mutation({
 
 export const testIdentify = mutation({
   args: {
-    distinctId: v.string(),
+    distinctId: v.optional(v.string()),
     properties: v.optional(v.any()),
     disableGeoip: v.optional(v.boolean()),
   },
@@ -68,7 +71,7 @@ export const testGroupIdentify = mutation({
 
 export const testAlias = mutation({
   args: {
-    distinctId: v.string(),
+    distinctId: v.optional(v.string()),
     alias: v.string(),
     disableGeoip: v.optional(v.boolean()),
   },
@@ -117,7 +120,7 @@ export const testCaptureException = mutation({
 // --- Feature flag methods (actions) ---
 
 const featureFlagArgs = {
-  distinctId: v.string(),
+  distinctId: v.optional(v.string()),
   flagKey: v.string(),
   groups: v.optional(v.any()),
   personProperties: v.optional(v.any()),
@@ -200,7 +203,7 @@ export const testGetFeatureFlagResult = action({
 
 export const testGetAllFlags = action({
   args: {
-    distinctId: v.string(),
+    distinctId: v.optional(v.string()),
     groups: v.optional(v.any()),
     personProperties: v.optional(v.any()),
     groupProperties: v.optional(v.any()),
@@ -226,7 +229,7 @@ export const testGetAllFlags = action({
 
 export const testGetAllFlagsAndPayloads = action({
   args: {
-    distinctId: v.string(),
+    distinctId: v.optional(v.string()),
     groups: v.optional(v.any()),
     personProperties: v.optional(v.any()),
     groupProperties: v.optional(v.any()),
