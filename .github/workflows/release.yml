@@ -1,7 +1,8 @@
 name: Release
 
 permissions:
-    contents: read
+    contents: write
+    id-token: write
 
 on:
     pull_request:
@@ -43,52 +44,19 @@ jobs:
                     echo "has-changesets=true" >> "$GITHUB_OUTPUT"
                   fi
 
-    notify-approval-needed:
-        name: Notify Slack - Approval Needed
-        needs: check-changesets
-        if: needs.check-changesets.outputs.has-changesets == 'true'
-        uses: PostHog/.github/.github/workflows/notify-approval-needed.yml@main
-        with:
-            slack_channel_id: ${{ vars.SLACK_APPROVALS_CLIENT_LIBRARIES_CHANNEL_ID }}
-            slack_user_group_id: ${{ vars.GROUP_CLIENT_LIBRARIES_SLACK_GROUP_ID }}
-        secrets:
-            slack_bot_token: ${{ secrets.SLACK_CLIENT_LIBRARIES_BOT_TOKEN }}
-            posthog_project_api_key: ${{ secrets.POSTHOG_PROJECT_API_KEY }}
-
     version-bump:
         name: Bump version and commit to main
-        needs: [check-changesets, notify-approval-needed]
+        needs: check-changesets
         runs-on: ubuntu-latest
-        if: always() && needs.check-changesets.outputs.has-changesets == 'true'
-        environment: 'NPM Release'
-        permissions:
-            contents: write
+        if: needs.check-changesets.outputs.has-changesets == 'true'
         outputs:
             committed: ${{ steps.commit-version-bump.outputs.committed }}
         steps:
-            - name: Notify Slack - Approved
-              continue-on-error: true
-              uses: PostHog/.github/.github/actions/slack-thread-reply@main
-              with:
-                  slack_bot_token: ${{ secrets.SLACK_CLIENT_LIBRARIES_BOT_TOKEN }}
-                  slack_channel_id: ${{ vars.SLACK_APPROVALS_CLIENT_LIBRARIES_CHANNEL_ID }}
-                  thread_ts: ${{ needs.notify-approval-needed.outputs.slack_ts }}
-                  message: 'Release approved! Version bump in progress...'
-                  emoji_reaction: 'white_check_mark'
-
-            - name: Get GitHub App token
-              id: releaser
-              uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
-              with:
-                  app-id: ${{ secrets.GH_APP_POSTHOG_JS_RELEASER_APP_ID }}
-                  private-key: ${{ secrets.GH_APP_POSTHOG_JS_RELEASER_PRIVATE_KEY }}
-
             - name: Checkout repository
               uses: actions/checkout@v4
               with:
                   ref: main
                   fetch-depth: 0
-                  token: ${{ steps.releaser.outputs.token }}
 
             - name: Configure Git
               run: |
@@ -110,7 +78,7 @@ jobs:
             - name: Update version and changelog
               run: pnpm changeset version
               env:
-                  GITHUB_TOKEN: ${{ steps.releaser.outputs.token }}
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
             - name: Update lockfile
               run: pnpm install
@@ -127,57 +95,12 @@ jobs:
                     git push origin main
                     echo "committed=true" >> "$GITHUB_OUTPUT"
                   fi
-              env:
-                  GITHUB_TOKEN: ${{ steps.releaser.outputs.token }}
-
-    notify-rejected:
-        name: Notify Slack - Rejected
-        needs: [version-bump, notify-approval-needed]
-        runs-on: ubuntu-latest
-        if: always() && needs.version-bump.result == 'failure' && needs.notify-approval-needed.outputs.slack_ts != ''
-        steps:
-            - name: Check for rejection
-              id: check-rejection
-              env:
-                  GH_TOKEN: ${{ github.token }}
-              run: |
-                  RESPONSE=$(gh api /repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/approvals)
-                  REJECTED=$(echo "$RESPONSE" | jq '[.[] | select(.state == "rejected")] | length')
-                  if [ "$REJECTED" -gt 0 ]; then
-                    echo "was_rejected=true" >> "$GITHUB_OUTPUT"
-                    COMMENT=$(echo "$RESPONSE" | jq -r '.[] | select(.state == "rejected") | .comment // empty' | head -1)
-                    if [ -n "$COMMENT" ]; then
-                      {
-                        echo 'message<<EOF'
-                        echo "Release was rejected: $COMMENT"
-                        echo 'EOF'
-                      } >> "$GITHUB_OUTPUT"
-                    else
-                      echo "message=Release was rejected." >> "$GITHUB_OUTPUT"
-                    fi
-                  else
-                    echo "was_rejected=false" >> "$GITHUB_OUTPUT"
-                  fi
-
-            - name: Notify Slack - Rejected
-              if: steps.check-rejection.outputs.was_rejected == 'true'
-              continue-on-error: true
-              uses: PostHog/.github/.github/actions/slack-thread-reply@main
-              with:
-                  slack_bot_token: ${{ secrets.SLACK_CLIENT_LIBRARIES_BOT_TOKEN }}
-                  slack_channel_id: ${{ vars.SLACK_APPROVALS_CLIENT_LIBRARIES_CHANNEL_ID }}
-                  thread_ts: ${{ needs.notify-approval-needed.outputs.slack_ts }}
-                  message: '${{ steps.check-rejection.outputs.message }}'
-                  emoji_reaction: 'no_entry_sign'
 
     publish:
         name: Publish to npm
-        needs: [version-bump, notify-approval-needed]
+        needs: version-bump
         runs-on: ubuntu-latest
-        if: always() && needs.version-bump.outputs.committed == 'true'
-        permissions:
-            contents: write
-            id-token: write
+        if: needs.version-bump.outputs.committed == 'true'
         steps:
             - name: Checkout repository
               uses: actions/checkout@v4
@@ -243,25 +166,3 @@ jobs:
                     -F draft=false \
                     -F prerelease=false \
                     -F generate_release_notes=false
-
-            - name: Notify Slack - Released
-              continue-on-error: true
-              if: steps.check-package-version.outputs.is-new-version == 'true'
-              uses: PostHog/.github/.github/actions/slack-thread-reply@main
-              with:
-                  slack_bot_token: ${{ secrets.SLACK_CLIENT_LIBRARIES_BOT_TOKEN }}
-                  slack_channel_id: ${{ vars.SLACK_APPROVALS_CLIENT_LIBRARIES_CHANNEL_ID }}
-                  thread_ts: ${{ needs.notify-approval-needed.outputs.slack_ts }}
-                  message: 'Published @posthog/convex@${{ steps.check-package-version.outputs.committed-version }} to npm!'
-                  emoji_reaction: 'rocket'
-
-            - name: Notify Slack - Failed
-              continue-on-error: true
-              if: failure() && needs.notify-approval-needed.outputs.slack_ts != ''
-              uses: PostHog/.github/.github/actions/slack-thread-reply@main
-              with:
-                  slack_bot_token: ${{ secrets.SLACK_CLIENT_LIBRARIES_BOT_TOKEN }}
-                  slack_channel_id: ${{ vars.SLACK_APPROVALS_CLIENT_LIBRARIES_CHANNEL_ID }}
-                  thread_ts: ${{ needs.notify-approval-needed.outputs.slack_ts }}
-                  message: 'Failed to release @posthog/convex! <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View logs>'
-                  emoji_reaction: 'x'
