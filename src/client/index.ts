@@ -30,6 +30,10 @@ export type PostHogEvent = {
 
 export type BeforeSendFn = (event: PostHogEvent) => PostHogEvent | null;
 
+export type IdentifyFn = (
+  ctx: any,
+) => Promise<{ distinctId: string } | null>;
+
 export function normalizeError(error: unknown): {
   message: string;
   stack?: string;
@@ -65,6 +69,7 @@ export class PostHog {
   private apiKey: string;
   private host: string;
   private beforeSend?: BeforeSendFn | BeforeSendFn[];
+  private identifyFn?: IdentifyFn;
 
   constructor(
     public component: ComponentApi,
@@ -72,12 +77,29 @@ export class PostHog {
       apiKey?: string;
       host?: string;
       beforeSend?: BeforeSendFn | BeforeSendFn[];
+      identify?: IdentifyFn;
     },
   ) {
     this.apiKey = options?.apiKey ?? process.env.POSTHOG_API_KEY ?? "";
     this.host =
       options?.host ?? process.env.POSTHOG_HOST ?? "https://us.i.posthog.com";
     this.beforeSend = options?.beforeSend;
+    this.identifyFn = options?.identify;
+  }
+
+  private async resolveDistinctId(
+    ctx: unknown,
+    argsDistinctId?: string,
+  ): Promise<string> {
+    if (this.identifyFn) {
+      const result = await this.identifyFn(ctx);
+      if (result) return result.distinctId;
+    }
+    if (argsDistinctId) return argsDistinctId;
+    throw new Error(
+      "PostHog: Could not resolve distinctId. Either configure an identify callback " +
+        "in the PostHog constructor or pass distinctId explicitly.",
+    );
   }
 
   private runBeforeSend(event: PostHogEvent): PostHogEvent | null {
@@ -98,7 +120,7 @@ export class PostHog {
   async capture(
     ctx: SchedulerCtx,
     args: {
-      distinctId: string;
+      distinctId?: string;
       event: string;
       properties?: Record<string, unknown>;
       groups?: Record<string, string | number>;
@@ -108,9 +130,10 @@ export class PostHog {
       disableGeoip?: boolean;
     },
   ) {
+    const distinctId = await this.resolveDistinctId(ctx, args.distinctId);
     const result = this.runBeforeSend({
       event: args.event,
-      distinctId: args.distinctId,
+      distinctId,
       properties: args.properties,
     });
     if (!result) return;
@@ -132,7 +155,7 @@ export class PostHog {
   async identify(
     ctx: SchedulerCtx,
     args: {
-      distinctId: string;
+      distinctId?: string;
       properties?: Record<string, unknown> & {
         $set?: Record<string, unknown>;
         $set_once?: Record<string, unknown>;
@@ -141,9 +164,10 @@ export class PostHog {
       disableGeoip?: boolean;
     },
   ) {
+    const distinctId = await this.resolveDistinctId(ctx, args.distinctId);
     const result = this.runBeforeSend({
       event: "$identify",
-      distinctId: args.distinctId,
+      distinctId,
       properties: args.properties,
     });
     if (!result) return;
@@ -188,14 +212,15 @@ export class PostHog {
   async alias(
     ctx: SchedulerCtx,
     args: {
-      distinctId: string;
+      distinctId?: string;
       alias: string;
       disableGeoip?: boolean;
     },
   ) {
+    const distinctId = await this.resolveDistinctId(ctx, args.distinctId);
     const result = this.runBeforeSend({
       event: "$create_alias",
-      distinctId: args.distinctId,
+      distinctId,
     });
     if (!result) return;
 
@@ -218,9 +243,16 @@ export class PostHog {
   ) {
     const { message, stack, name } = normalizeError(args.error);
 
+    let distinctId: string | undefined;
+    try {
+      distinctId = await this.resolveDistinctId(ctx, args.distinctId);
+    } catch {
+      // captureException works without a distinctId
+    }
+
     const result = this.runBeforeSend({
       event: "$exception",
-      distinctId: args.distinctId ?? "",
+      distinctId: distinctId ?? "",
       properties: args.additionalProperties,
     });
     if (!result) return;
@@ -240,23 +272,27 @@ export class PostHog {
 
   async getFeatureFlag(
     ctx: ActionCtx,
-    args: { key: string; distinctId: string } & FeatureFlagOptions,
+    args: { key: string; distinctId?: string } & FeatureFlagOptions,
   ): Promise<boolean | string | null> {
+    const distinctId = await this.resolveDistinctId(ctx, args.distinctId);
     return await ctx.runAction(this.component.lib.getFeatureFlag, {
       apiKey: this.apiKey,
       host: this.host,
       ...args,
+      distinctId,
     });
   }
 
   async isFeatureEnabled(
     ctx: ActionCtx,
-    args: { key: string; distinctId: string } & FeatureFlagOptions,
+    args: { key: string; distinctId?: string } & FeatureFlagOptions,
   ): Promise<boolean | null> {
+    const distinctId = await this.resolveDistinctId(ctx, args.distinctId);
     return await ctx.runAction(this.component.lib.isFeatureEnabled, {
       apiKey: this.apiKey,
       host: this.host,
       ...args,
+      distinctId,
     });
   }
 
@@ -264,32 +300,36 @@ export class PostHog {
     ctx: ActionCtx,
     args: {
       key: string;
-      distinctId: string;
+      distinctId?: string;
       matchValue?: boolean | string;
     } & FeatureFlagOptions,
   ): Promise<unknown> {
+    const distinctId = await this.resolveDistinctId(ctx, args.distinctId);
     return await ctx.runAction(this.component.lib.getFeatureFlagPayload, {
       apiKey: this.apiKey,
       host: this.host,
       ...args,
+      distinctId,
     });
   }
 
   async getFeatureFlagResult(
     ctx: ActionCtx,
-    args: { key: string; distinctId: string } & FeatureFlagOptions,
+    args: { key: string; distinctId?: string } & FeatureFlagOptions,
   ): Promise<FeatureFlagResult | null> {
+    const distinctId = await this.resolveDistinctId(ctx, args.distinctId);
     return await ctx.runAction(this.component.lib.getFeatureFlagResult, {
       apiKey: this.apiKey,
       host: this.host,
       ...args,
+      distinctId,
     });
   }
 
   async getAllFlags(
     ctx: ActionCtx,
     args: {
-      distinctId: string;
+      distinctId?: string;
       groups?: Record<string, string>;
       personProperties?: Record<string, string>;
       groupProperties?: Record<string, Record<string, string>>;
@@ -297,17 +337,19 @@ export class PostHog {
       flagKeys?: string[];
     },
   ): Promise<Record<string, boolean | string>> {
+    const distinctId = await this.resolveDistinctId(ctx, args.distinctId);
     return await ctx.runAction(this.component.lib.getAllFlags, {
       apiKey: this.apiKey,
       host: this.host,
       ...args,
+      distinctId,
     });
   }
 
   async getAllFlagsAndPayloads(
     ctx: ActionCtx,
     args: {
-      distinctId: string;
+      distinctId?: string;
       groups?: Record<string, string>;
       personProperties?: Record<string, string>;
       groupProperties?: Record<string, Record<string, string>>;
@@ -318,10 +360,12 @@ export class PostHog {
     featureFlags: Record<string, boolean | string>;
     featureFlagPayloads: Record<string, unknown>;
   }> {
+    const distinctId = await this.resolveDistinctId(ctx, args.distinctId);
     return await ctx.runAction(this.component.lib.getAllFlagsAndPayloads, {
       apiKey: this.apiKey,
       host: this.host,
       ...args,
+      distinctId,
     });
   }
 }
